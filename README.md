@@ -29,7 +29,9 @@ For a full phone-first walkthrough, see [GUIDE_ZERO_TO_PHONE.md](GUIDE_ZERO_TO_P
 ### 3) Install dependencies
 
 ```bash
-pip install -r requirements.txt
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 ### 4) Configure environment
@@ -47,6 +49,7 @@ TELEGRAM_BOT_TOKEN=your_bot_token_here
 ### 5) Run the bot
 
 ```bash
+. .venv/bin/activate
 python -m bot.main
 ```
 
@@ -119,6 +122,6 @@ music/      # Downloaded audio files (runtime)
 
 ## Notes
 
-- This bot uses polling mode (`python -m bot.main`).
+- This bot uses polling mode (run from the virtualenv with `python -m bot.main`).
 - Downloaded files and DB are local to your machine.
 - Keep your bot token private and never commit `.env`.

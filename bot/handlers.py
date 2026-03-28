@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from .db import Database
@@ -13,6 +14,40 @@ from .services import fetch_lyrics
 
 
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma"}
+AUDIO_SEND_MAX_RETRIES = 1
+
+
+async def _reply_audio_with_retry(
+    message: Message,
+    *,
+    audio,
+    caption: str,
+    title: str,
+    performer: str | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    for attempt in range(AUDIO_SEND_MAX_RETRIES + 1):
+        try:
+            await message.reply_audio(
+                audio=audio,
+                caption=caption,
+                title=title,
+                performer=performer,
+                reply_markup=reply_markup,
+                connect_timeout=30,
+                read_timeout=600,
+                write_timeout=600,
+                pool_timeout=30,
+            )
+            return True
+        except (TimedOut, NetworkError):
+            if attempt < AUDIO_SEND_MAX_RETRIES:
+                continue
+            await message.reply_text(
+                "Upload timed out while sending audio to Telegram. "
+                "Please try again in a moment."
+            )
+            return False
 
 
 def _controls() -> InlineKeyboardMarkup:
@@ -141,7 +176,8 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             item = QueueItem(title=existing.title, filepath=str(path), source_url=existing.webpage_url)
             db.add_history(update.effective_chat.id, item)
             with path.open("rb") as music:
-                await update.message.reply_audio(
+                await _reply_audio_with_retry(
+                    update.message,
                     audio=music,
                     caption=f"From library: {existing.title} — {existing.artist}",
                     title=existing.title,
@@ -158,14 +194,20 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         db.add_history(update.effective_chat.id, item)
         await progress.edit_text("Sending… 🎵")
         with Path(item.filepath).open("rb") as music:
-            await update.message.reply_audio(
+            sent = await _reply_audio_with_retry(
+                update.message,
                 audio=music,
                 caption=f"{track.title} — {track.artist}",
                 title=track.title,
                 performer=track.artist,
                 reply_markup=_controls(),
             )
-        await progress.delete()
+        if sent:
+            await progress.delete()
+        else:
+            await progress.edit_text(
+                f"Download finished, but upload timed out. Try again with: /local {track.title}"
+            )
     except Exception as exc:
         await progress.edit_text(f"Failed: {exc}")
 
@@ -249,7 +291,8 @@ async def local(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db.add_history(update.effective_chat.id, item)
 
     with path.open("rb") as music:
-        await update.message.reply_audio(
+        await _reply_audio_with_retry(
+            update.message,
             audio=music,
             caption=f"Local: {track.title} — {track.artist}",
             title=track.title,
@@ -338,7 +381,8 @@ async def skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     db.add_history(chat_id, item)
     with path.open("rb") as music:
-        await update.message.reply_audio(
+        await _reply_audio_with_retry(
+            update.message,
             audio=music,
             caption=f"Now playing: {item.title}",
             title=item.title,
@@ -490,7 +534,8 @@ async def inline_controls(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Playing from library")
         if query.message:
             with path.open("rb") as music:
-                await query.message.reply_audio(
+                await _reply_audio_with_retry(
+                    query.message,
                     audio=music,
                     caption=f"Local: {track.title} — {track.artist}",
                     title=track.title,
