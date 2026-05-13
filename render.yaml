@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: music-player-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.main
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GENIUS_API_TOKEN
+        sync: false
+      - key: DOWNLOAD_DIR
+        value: /tmp/music
+      - key: DATABASE_PATH
+        value: /tmp/data/musicbot.db
+      - key: DEFAULT_AUDIO_QUALITY
+        value: "192"
+      - key: MAX_FILE_SIZE_MB
+        value: "49"
